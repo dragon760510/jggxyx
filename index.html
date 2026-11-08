@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1e1e2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="拼图">
+<meta name="mobile-web-app-capable" content="yes">
+<title>九宫格拼图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --gap: 8px;
+    --board-size: min(90vw, 55vh, 440px);
+    --inner: calc(var(--board-size) - 2 * var(--gap));
+    --tile-size: calc((var(--inner) - 2 * var(--gap)) / 3);
+  }
+  @supports (height: 100dvh) {
+    :root { --board-size: min(90vw, 55dvh, 440px); }
+  }
+
+  html, body {
+    height: 100%;
+    overscroll-behavior: none;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: radial-gradient(circle at 30% 0%, #2a2a3e, #1e1e2e 60%);
+    color: #cdd6f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+  }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    max-width: 520px;
+    padding: 16px;
+  }
+
+  .stats {
+    display: flex;
+    gap: 12px;
+    width: var(--board-size);
+  }
+
+  .stat {
+    flex: 1;
+    background: #313244;
+    border-radius: 14px;
+    padding: 10px 8px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+  .stat span {
+    display: block;
+    font-size: 22px;
+    font-weight: 800;
+    color: #89b4fa;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .stat small {
+    font-size: 11px;
+    color: #a6adc8;
+    letter-spacing: 1px;
+  }
+
+  .board-wrap {
+    width: var(--board-size);
+    height: var(--board-size);
+    background: #181825;
+    border-radius: 20px;
+    padding: var(--gap);
+    box-shadow: 0 10px 36px rgba(0,0,0,0.5),
+                inset 0 1px 0 rgba(255,255,255,0.04);
+    position: relative;
+  }
+
+  #board {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .tile {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--tile-size);
+    height: var(--tile-size);
+    background: linear-gradient(145deg, #a6c8ff, #74c7ec);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(var(--tile-size) * 0.42);
+    font-weight: 800;
+    color: #1e1e2e;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35),
+                inset 0 1px 0 rgba(255,255,255,0.4);
+    transition: transform 0.13s cubic-bezier(0.2, 0.85, 0.3, 1);
+    will-change: transform;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .tile:active { filter: brightness(0.92); }
+  .no-anim .tile { transition: none !important; }
+
+  .actions {
+    display: flex;
+    gap: 12px;
+    width: var(--board-size);
+  }
+
+  button {
+    flex: 1;
+    padding: 15px;
+    border: none;
+    border-radius: 14px;
+    background: #89b4fa;
+    color: #1e1e2e;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s, opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.96);
+    background: #74c7ec;
+  }
+  button:disabled {
+    background: #45475a;
+    color: #7f849c;
+    cursor: not-allowed;
+  }
+
+  .overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    padding: 20px;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+
+  .overlay-card {
+    background: #313244;
+    border-radius: 22px;
+    padding: 32px 28px 28px;
+    text-align: center;
+    transform: scale(0.85);
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    max-width: 320px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .overlay.show .overlay-card { transform: scale(1); }
+
+  .overlay-card h2 {
+    font-size: 26px;
+    margin-bottom: 14px;
+    color: #a6e3a1;
+  }
+  .overlay-card p {
+    color: #cdd6f4;
+    margin-bottom: 24px;
+    line-height: 1.7;
+    font-size: 16px;
+  }
+  .overlay-card p strong { color: #f9e2af; font-size: 20px; }
+  .overlay-card button {
+    width: 100%;
+    flex: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="stats">
+    <div class="stat"><span id="moves">0</span><small>步数</small></div>
+    <div class="stat"><span id="time">00:00</span><small>时间</small></div>
+  </div>
+
+  <div class="board-wrap">
+    <div id="board"></div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-new">重新开始</button>
+    <button id="btn-solve">自动求解</button>
+  </div>
+</div>
+
+<div id="win-overlay" class="overlay">
+  <div class="overlay-card">
+    <h2>🎉 恭喜！</h2>
+    <p id="win-text"></p>
+    <button id="btn-again">再来一局</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const GOAL_KEY = '1,2,3,4,5,6,7,8,0';
+  const NEIGHBORS = [
+    [1,3], [0,2,4], [1,5],
+    [0,4,6], [1,3,5,7], [2,4,8],
+    [3,7], [4,6,8], [5,7]
+  ];
+
+  const boardEl = document.getElementById('board');
+  const movesEl = document.getElementById('moves');
+  const timeEl  = document.getElementById('time');
+  const winOverlay = document.getElementById('win-overlay');
+  const winText = document.getElementById('win-text');
+  const winTitle = winOverlay.querySelector('h2');
+  const btnNew = document.getElementById('btn-new');
+  const btnSolve = document.getElementById('btn-solve');
+
+  let state = [];
+  let tiles = {};
+  let moves = 0;
+  let startTime = null;
+  let elapsed = 0;
+  let timerId = null;
+  let busy = false;
+
+  // ---------- 工具 ----------
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const fmt = sec => String(Math.floor(sec / 60)).padStart(2, '0') + ':' +
+                     String(sec % 60).padStart(2, '0');
+  function vibrate(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (_) {} }
+  function isSolved() { return state.join(',') === GOAL_KEY; }
+
+  // ---------- 初始化 / 打乱 ----------
+  function newGame() {
+    winOverlay.classList.remove('show');
+    stopTimer();
+    moves = 0; startTime = null; elapsed = 0; busy = false;
+    btnSolve.disabled = false; btnNew.disabled = false;
+    movesEl.textContent = '0';
+    timeEl.textContent = '00:00';
+    state = shuffle();
+    buildTiles();
+    layout(false);
+  }
+
+  function shuffle() {
+    while (true) {
+      let s = [1,2,3,4,5,6,7,8,0];
+      let prev = -1;
+      for (let k = 0; k < 250; k++) {
+        const e = s.indexOf(0);
+        const cand = NEIGHBORS[e].filter(n => n !== prev);
+        const n = cand[Math.floor(Math.random() * cand.length)];
+        [s[e], s[n]] = [s[n], s[e]];
+        prev = e;
+      }
+      if (s.join(',') !== GOAL_KEY && manhattan(s) >= 10) return s;
+    }
+  }
+
+  // ---------- 渲染 ----------
+  function buildTiles() {
+    boardEl.innerHTML = '';
+    tiles = {};
+    for (let v = 1; v <= 8; v++) {
+      const el = document.createElement('div');
+      el.className = 'tile';
+      el.textContent = v;
+      el.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        onTap(v);
+      });
+      boardEl.appendChild(el);
+      tiles[v] = el;
+    }
+  }
+
+  function layout(animate = true) {
+    if (!animate) boardEl.classList.add('no-anim');
+    for (let i = 0; i < 9; i++) {
+      const v = state[i];
+      if (v === 0) continue;
+      const r = (i / 3) | 0, c = i % 3;
+      tiles[v].style.transform =
+        'translate(calc(' + c + ' * (var(--tile-size) + var(--gap))),' +
+        'calc(' + r + ' * (var(--tile-size) + var(--gap))))';
+    }
+    if (!animate) {
+      void boardEl.offsetHeight;
+      requestAnimationFrame(() => boardEl.classList.remove('no-anim'));
+    }
+  }
+
+  // ---------- 交互 ----------
+  function onTap(v) {
+    if (busy) return;
+    const e = state.indexOf(0);
+    const i = state.indexOf(v);
+    if (!NEIGHBORS[e].includes(i)) return;
+
+    if (!startTime) startTime = Date.now() - elapsed;
+    startTimer();
+
+    const next = state.slice();
+    next[e] = v;
+    next[i] = 0;
+    state = next;
+
+    moves++;
+    movesEl.textContent = moves;
+    layout();
+    vibrate(8);
+
+    if (isSolved()) setTimeout(showWin, 200);
+  }
+
+  // ---------- 计时 ----------
+  function startTimer() {
+    if (timerId) return;
+    timerId = setInterval(() => {
+      if (!startTime) return;
+      elapsed = Date.now() - startTime;
+      timeEl.textContent = fmt(Math.floor(elapsed / 1000));
+    }, 250);
+  }
+  function stopTimer() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+  }
+
+  // ---------- 胜利 ----------
+  function showWin() {
+    stopTimer();
+    winTitle.textContent = '🎉 恭喜！';
+    winText.innerHTML =
+      '用了 <strong>' + moves + '</strong> 步<br>耗时 ' +
+      fmt(Math.floor(elapsed / 1000));
+    winOverlay.classList.add('show');
+    vibrate([30, 50, 30]);
+  }
+  function showAutoWin(steps) {
+    winTitle.textContent = '🤖 求解完成';
+    winText.innerHTML = '最短路径共 <strong>' + steps + '</strong> 步';
+    winOverlay.classList.add('show');
+    vibrate([30, 50, 30]);
+  }
+
+  // ---------- 启发式 ----------
+  function manhattan(s) {
+    let d = 0;
+    for (let i = 0; i < 9; i++) {
+      const v = s[i];
+      if (v === 0) continue;
+      const tr = ((v - 1) / 3) | 0, tc = (v - 1) % 3;
+      const r = (i / 3) | 0, c = i % 3;
+      d += Math.abs(tr - r) + Math.abs(tc - c);
+    }
+    return d;
+  }
+
+  // ---------- 最小堆 ----------
+  class MinHeap {
+    constructor() { this.a = []; }
+    get size() { return this.a.length; }
+    push(item) {
+      const a = this.a;
+      a.push(item);
+      let i = a.length - 1;
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (a[p].f <= a[i].f) break;
+        [a[p], a[i]] = [a[i], a[p]];
+        i = p;
+      }
+    }
+    pop() {
+      const a = this.a;
+      const top = a[0];
+      const last = a.pop();
+      if (a.length) {
+        a[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = i * 2 + 1, r = l + 1;
+          let m = i;
+          if (l < a.length && a[l].f < a[m].f) m = l;
+          if (r < a.length && a[r].f < a[m].f) m = r;
+          if (m === i) break;
+          [a[m], a[i]] = [a[i], a[m]];
+          i = m;
+        }
+      }
+      return top;
+    }
+  }
+
+  // ---------- A* ----------
+  function solve(startArr) {
+    const start = startArr.join(',');
+    if (start === GOAL_KEY) return [];
+
+    const g = new Map([[start, 0]]);
+    const parent = new Map([[start, null]]);
+    const heap = new MinHeap();
+    heap.push({ f: manhattan(startArr), g: 0, key: start, arr: startArr.slice() });
+
+    while (heap.size) {
+      const cur = heap.pop();
+      if (cur.g > (g.get(cur.key) ?? Infinity)) continue;
+      if (cur.key === GOAL_KEY) {
+        const path = [];
+        let k = cur.key;
+        while (k !== start) {
+          path.push(k.split(',').map(Number));
+          k = parent.get(k);
+        }
+        return path.reverse();
+      }
+      const e = cur.arr.indexOf(0);
+      for (const n of NEIGHBORS[e]) {
+        const arr = cur.arr.slice();
+        [arr[e], arr[n]] = [arr[n], arr[e]];
+        const key = arr.join(',');
+        const ng = cur.g + 1;
+        if (ng < (g.get(key) ?? Infinity)) {
+          g.set(key, ng);
+          parent.set(key, cur.key);
+          heap.push({ f: ng + manhattan(arr), g: ng, key, arr });
+        }
+      }
+    }
+    return null;
+  }
+
+  // ---------- 自动求解 ----------
+  async function autoSolve() {
+    if (busy || isSolved()) return;
+    const path = solve(state);
+    if (!path || !path.length) { alert('当前局面无解'); return; }
+
+    busy = true;
+    stopTimer();
+    btnSolve.disabled = true;
+    btnNew.disabled = true;
+    btnSolve.textContent = '求解中…';
+
+    await sleep(150);
+    for (const next of path) {
+      state = next;
+      layout();
+      vibrate(6);
+      await sleep(170);
+    }
+
+    busy = false;
+    btnSolve.textContent = '自动求解';
+    btnSolve.disabled = false;
+    btnNew.disabled = false;
+
+    if (isSolved()) showAutoWin(path.length);
+  }
+
+  // ---------- 绑定 ----------
+  btnNew.addEventListener('click', newGame);
+  btnSolve.addEventListener('click', autoSolve);
+  document.getElementById('btn-again').addEventListener('click', newGame);
+
+  // 阻止页面双击缩放 / 长按菜单
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  newGame();
+})();
+</script>
+</body>
+</html>
